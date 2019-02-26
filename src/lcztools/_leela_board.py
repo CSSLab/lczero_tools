@@ -20,12 +20,12 @@ def pc_board_property(propertyname):
     def prop(self):
         return getattr(self.pc_board, propertyname)
     return property(prop)
-    
+
 class LeelaBoard:
     turn = pc_board_property('turn')
     move_stack = pc_board_property('move_stack')
     _plane_bytes_struct = struct.Struct('>Q')
-    
+
     def __init__(self, leela_board = None, *args, **kwargs):
         '''If leela_board is passed as an argument, return a copy'''
         self.pc_board = chess.Board(*args, **kwargs)
@@ -35,32 +35,32 @@ class LeelaBoard:
         self.is_game_over = self.pc_method('is_game_over')
         self.can_claim_draw = self.pc_method('can_claim_draw')
         self.generate_legal_moves = self.pc_method('generate_legal_moves')
-                
+
     def copy(self, history=7):
         """Note! Currently the copy constructor uses pc_board.copy(stack=False), which makes pops impossible"""
         cls = type(self)
         copied = cls.__new__(cls)
         copied.pc_board = self.pc_board.copy(stack=False)
-        copied.pc_board.stack[:] = self.pc_board.stack[-history:]
+        copied.pc_board._stack[:] = self.pc_board._stack[-history:]
         copied.pc_board.move_stack[:] = self.pc_board.move_stack[-history:]
         copied.lcz_stack = self.lcz_stack[-history:]
         copied._lcz_transposition_counter = self._lcz_transposition_counter.copy()
         copied.is_game_over = copied.pc_method('is_game_over')
         copied.can_claim_draw = copied.pc_method('can_claim_draw')
-        copied.generate_legal_moves = copied.pc_method('generate_legal_moves')        
+        copied.generate_legal_moves = copied.pc_method('generate_legal_moves')
         return copied
 
     def pc_method(self, methodname):
         '''Return attribute of self.pc_board, useful for copying method bindings'''
         return getattr(self.pc_board, methodname)
-    
+
     def is_threefold(self):
         transposition_key = self.pc_board._transposition_key()
         return self._lcz_transposition_counter[transposition_key] >= 3
-    
+
     def is_fifty_moves(self):
         return self.pc_board.halfmove_clock >= 100
-    
+
     def is_draw(self):
         return self.is_threefold() or self.is_fifty_moves()
 
@@ -107,7 +107,7 @@ class LeelaBoard:
             _c = self.pc_board.castling_rights
             us_ooo, us_oo = (_c>>chess.A1) & 1, (_c>>chess.H1) & 1
             them_ooo, them_oo = (_c>>chess.A8) & 1, (_c>>chess.H8) & 1
-        else: 
+        else:
             # We're black
             _c = self.pc_board.castling_rights
             us_ooo, us_oo = (_c>>chess.A8) & 1, (_c>>chess.H8) & 1
@@ -122,7 +122,7 @@ class LeelaBoard:
             side_to_move=side_to_move, rule50_count=rule50_count
         )
         self.lcz_stack.append(lcz_data)
-        
+
     def serialize_features(self):
         '''Get compacted bytes representation of input planes'''
         planes = []
@@ -146,7 +146,7 @@ class LeelaBoard:
                              curdata.side_to_move)).tobytes()
             yield chr(curdata.rule50_count).encode()
         return b''.join(bytes_iter())
-    
+
     @classmethod
     def deserialize_features(cls, serialized):
         planes_stack = []
@@ -160,7 +160,7 @@ class LeelaBoard:
             if not side_to_move:
                 # we're white
                 planes = (np.unpackbits(memoryview(plane_bytes))[::-1]
-                                        .reshape(12, 8, 8)[::-1])                
+                                        .reshape(12, 8, 8)[::-1])
             else:
                 # We're black
                 planes = (np.unpackbits(memoryview(plane_bytes))[::-1]
@@ -176,10 +176,10 @@ class LeelaBoard:
             flat_planes[side_to_move],
             flat_planes[rule50_count],
             flat_planes[0],
-            flat_planes[1]])     
+            flat_planes[1]])
         planes = np.concatenate(planes_stack)
-        return planes                
-        
+        return planes
+
     def lcz_features(self):
         '''Get neural network input planes as uint8'''
         # print(list(self._planes_iter()))
@@ -191,7 +191,7 @@ class LeelaBoard:
             if not curdata.side_to_move:
                 # we're white
                 planes = (np.unpackbits(memoryview(plane_bytes))[::-1]
-                                        .reshape(12, 8, 8)[::-1])                
+                                        .reshape(12, 8, 8)[::-1])
             else:
                 # We're black
                 planes = (np.unpackbits(memoryview(plane_bytes))[::-1]
@@ -212,17 +212,17 @@ class LeelaBoard:
             flat_planes[curdata.side_to_move],
             flat_planes[curdata.rule50_count],
             flat_planes[0],
-            flat_planes[1]])     
+            flat_planes[1]])
         planes = np.concatenate(planes_stack)
         return planes
 
     def lcz_uci_to_idx(self, uci_list):
         # Return list of NN policy output indexes for this board position, given uci_list
-        
+
         # TODO: Perhaps it's possible to just add the uci knight promotion move to the index dict
-        # currently knight promotions are not in the dict 
+        # currently knight promotions are not in the dict
         uci_list = [uci.rstrip('n') for uci in uci_list]
-        
+
         data = self.lcz_stack[-1]
         # uci_to_idx_index =
         #  White, no-castling => 0
@@ -232,7 +232,7 @@ class LeelaBoard:
         uci_to_idx_index = (data.us_ooo | data.us_oo) +  2*data.side_to_move
         uci_idx_dct = _uci_to_idx[uci_to_idx_index]
         return [uci_idx_dct[m] for m in uci_list]
-    
+
     @classmethod
     def compress_features(cls, features):
         """Compress a features array as returned from lcz_features method"""
@@ -243,7 +243,7 @@ class LeelaBoard:
         scalar_bytes = features_8[-8:][:,0,0].tobytes()
         compressed = zlib.compress(piece_plane_bytes + scalar_bytes)
         return compressed
-    
+
     @classmethod
     def decompress_features(cls, compressed_features):
         """Decompress a compressed features array from compress_features"""
@@ -256,13 +256,13 @@ class LeelaBoard:
         scalar_arr = np.frombuffer(scalar_bytes, dtype=np.uint8).repeat(64)
         result = np.concatenate((piece_plane_arr, scalar_arr)).astype(np.float32).reshape(-1,8,8)
         return result
-    
+
     def unicode(self):
         if self.pc_board.is_game_over() or self.is_draw():
             result = self.pc_board.result(claim_draw=True)
             turnstring = 'Result: {}'.format(result)
         else:
-            turnstring = 'Turn: {}'.format('White' if self.pc_board.turn else 'Black') 
+            turnstring = 'Turn: {}'.format('White' if self.pc_board.turn else 'Black')
         boardstr = self.pc_board.unicode() + "\n" + turnstring
         return boardstr
 
@@ -277,18 +277,18 @@ class LeelaBoard:
             result = self.pc_board.result(claim_draw=True)
             turnstring = 'Result: {}'.format(result)
         else:
-            turnstring = 'Turn: {}'.format('White' if self.pc_board.turn else 'Black') 
+            turnstring = 'Turn: {}'.format('White' if self.pc_board.turn else 'Black')
         boardstr = self.pc_board.__str__() + "\n" + turnstring
         return boardstr
-    
+
     def __eq__(self, other):
         return self.get_hash_key() == other.get_hash_key()
-    
+
     def __hash__(self):
         return hash(self.get_hash_key())
 
     def get_hash_key(self):
-        transposition_key = self.pc_board._transposition_key() 
+        transposition_key = self.pc_board._transposition_key()
         return (transposition_key +
                 (self._lcz_transposition_counter[transposition_key], self.pc_board.halfmove_clock) +
                 tuple(self.pc_board.move_stack[-7:])
